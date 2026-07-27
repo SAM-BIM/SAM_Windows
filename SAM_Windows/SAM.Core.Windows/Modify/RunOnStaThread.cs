@@ -32,9 +32,13 @@ namespace SAM.Core.Windows
         /// exception from <paramref name="action"/> is rethrown to the caller.
         /// </para>
         /// </summary>
-        /// <param name="name">Window title, shown to the user.</param>
+        /// <param name="name">Window title and main line, shown to the user with a running total time.</param>
         /// <param name="action">The work to run on the STA thread.</param>
-        public static void RunOnStaThread(string name, Action action)
+        /// <param name="note">
+        /// Optional second line. Defaults to a note saying the stage cannot be cancelled — which is the whole
+        /// point of this helper, and the thing users otherwise have no way of knowing while they wait.
+        /// </param>
+        public static void RunOnStaThread(string name, Action action, string note = null)
         {
             if (action == null)
             {
@@ -45,6 +49,9 @@ namespace SAM.Core.Windows
 
             using (MarqueeProgressForm marqueeProgressForm = new MarqueeProgressForm(name))
             {
+                marqueeProgressForm.Description = name;
+                marqueeProgressForm.Note = note ?? "This stage cannot be cancelled - it must finish before the run stops.";
+
                 bool finished = false;
 
                 Thread thread = new Thread(() =>

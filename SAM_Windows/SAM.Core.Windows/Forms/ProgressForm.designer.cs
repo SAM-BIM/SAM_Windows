@@ -54,18 +54,20 @@ namespace SAM.Core.Windows.Forms
             //
             // Label_Note
             //
-            // Secondary line under the main text, shown only when the form is Cancellable. Carries the note
-            // about what the Cancel button can and cannot interrupt.
+            // Secondary text under the main line, shown only when the form is Cancellable. Carries the note
+            // about what the Cancel button can and cannot interrupt. Two lines tall and word-wrapping: the
+            // notes run to ~90 characters, which a single 391px line ellipsises away to nothing useful.
+            // AutoEllipsis stays on purely as a backstop for a pathologically long step name.
             this.Label_Note.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top
             | System.Windows.Forms.AnchorStyles.Left)
             | System.Windows.Forms.AnchorStyles.Right)));
             this.Label_Note.AutoSize = false;
             this.Label_Note.AutoEllipsis = true;
             this.Label_Note.ForeColor = System.Drawing.SystemColors.GrayText;
-            this.Label_Note.Location = new System.Drawing.Point(16, 44);
+            this.Label_Note.Location = new System.Drawing.Point(16, 42);
             this.Label_Note.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.Label_Note.Name = "Label_Note";
-            this.Label_Note.Size = new System.Drawing.Size(391, 18);
+            this.Label_Note.Size = new System.Drawing.Size(391, 34);
             this.Label_Note.TabIndex = 3;
             this.Label_Note.Visible = false;
             //
@@ -87,7 +89,7 @@ namespace SAM.Core.Windows.Forms
             //
             // Fixed top-left placement so the position is deterministic when Cancellable grows the form;
             // bottom-anchoring would be measured against the collapsed height and drift.
-            this.Button_Cancel.Location = new System.Drawing.Point(311, 118);
+            this.Button_Cancel.Location = new System.Drawing.Point(311, 127);
             this.Button_Cancel.Margin = new System.Windows.Forms.Padding(4);
             this.Button_Cancel.Name = "Button_Cancel";
             this.Button_Cancel.Size = new System.Drawing.Size(96, 30);

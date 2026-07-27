@@ -24,14 +24,14 @@ namespace SAM.Core.Windows.Forms
         /// <summary>Designer height, used when the Cancel button is hidden (the default).</summary>
         private const int CollapsedClientHeight = 98;
 
-        /// <summary>Height needed to show the note line and the Cancel button.</summary>
-        private const int CancellableClientHeight = 160;
+        /// <summary>Height needed to show the two-line note and the Cancel button.</summary>
+        private const int CancellableClientHeight = 170;
 
         /// <summary>Progress bar top in the collapsed layout (the original designer position).</summary>
         private const int ProgressBarTopCollapsed = 50;
 
-        /// <summary>Progress bar top when expanded, leaving room for the note line above it.</summary>
-        private const int ProgressBarTopExpanded = 70;
+        /// <summary>Progress bar top when expanded, leaving room for the two-line note above it.</summary>
+        private const int ProgressBarTopExpanded = 82;
 
         /// <summary>Time spent in the current step; restarted on each increment.</summary>
         private readonly Stopwatch stepStopwatch = Stopwatch.StartNew();
@@ -117,30 +117,6 @@ namespace SAM.Core.Windows.Forms
             }
         }
 
-        /// <summary>
-        /// Formats a duration with explicit units so the number is never ambiguous: seconds under a minute,
-        /// then minutes and seconds, then hours, minutes and seconds.
-        /// </summary>
-        public static string FormatDuration(TimeSpan timeSpan)
-        {
-            if (timeSpan.TotalSeconds < 1.0)
-            {
-                return "0s";
-            }
-
-            if (timeSpan.TotalMinutes < 1.0)
-            {
-                return string.Format("{0}s", (int)timeSpan.TotalSeconds);
-            }
-
-            if (timeSpan.TotalHours < 1.0)
-            {
-                return string.Format("{0}m {1:00}s", (int)timeSpan.TotalMinutes, timeSpan.Seconds);
-            }
-
-            return string.Format("{0}h {1:00}m {2:00}s", (int)timeSpan.TotalHours, timeSpan.Minutes, timeSpan.Seconds);
-        }
-
         /// <summary>True once the user has clicked Cancel.</summary>
         public bool CancellationRequested
         {
@@ -152,7 +128,7 @@ namespace SAM.Core.Windows.Forms
         {
             CancellationRequested = true;
             Button_Cancel.Enabled = false;
-            Label_Description.Text = "Cancelling... (finishing current step) | total " + FormatDuration(stopwatch.Elapsed);
+            Label_Description.Text = "Cancelling... (finishing current step) | total " + Query.Duration(stopwatch.Elapsed);
             Label_Note.Text = "The current stage cannot be interrupted - it must finish before the run stops.";
             Refresh();
             CancelRequested?.Invoke(this, System.EventArgs.Empty);
@@ -206,9 +182,9 @@ namespace SAM.Core.Windows.Forms
                 return;
             }
 
-            // Both times carry explicit units (see FormatDuration) so the number can never be misread as
+            // Both times carry explicit units (see Query.Duration) so the number can never be misread as
             // mm:ss vs hh:mm, and "step"/"total" name which is which.
-            string times = "step " + FormatDuration(stepStopwatch.Elapsed) + " | total " + FormatDuration(stopwatch.Elapsed);
+            string times = "step " + Query.Duration(stepStopwatch.Elapsed) + " | total " + Query.Duration(stopwatch.Elapsed);
 
             // Counter and times lead so a long caption cannot push them out of the fixed-width label; the
             // caption and any detail are what get ellipsised. maxLength is only a coarse guard against
