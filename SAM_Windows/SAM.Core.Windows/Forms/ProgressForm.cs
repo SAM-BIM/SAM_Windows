@@ -13,6 +13,12 @@ namespace SAM.Core.Windows.Forms
         private int maxLength = 80;
         private readonly Stopwatch stopwatch = Stopwatch.StartNew();
 
+        /// <summary>Designer height, used when the Cancel button is hidden (the default).</summary>
+        private const int CollapsedClientHeight = 98;
+
+        /// <summary>Height needed to show the Cancel button beneath the progress bar.</summary>
+        private const int CancellableClientHeight = 135;
+
         /// <summary>
         /// Raised on the UI thread when the user clicks Cancel. Because <see cref="Update"/> pumps the
         /// message queue (<see cref="Application.DoEvents"/>) on every step, this fires between steps even
@@ -47,9 +53,10 @@ namespace SAM.Core.Windows.Forms
         }
 
         /// <summary>
-        /// Opt-in: shows the Cancel button. Off by default so existing callers of the shared form are
-        /// unaffected. Callers that set this should honour <see cref="CancellationRequested"/> (or subscribe
-        /// to <see cref="CancelRequested"/>) between steps.
+        /// Opt-in: shows the Cancel button and grows the form to fit it. Off by default, and the form keeps
+        /// its original height, so existing callers of this shared form are visually unchanged. Callers that
+        /// set this should honour <see cref="CancellationRequested"/> (or subscribe to
+        /// <see cref="CancelRequested"/>) between steps.
         /// </summary>
         public bool Cancellable
         {
@@ -59,7 +66,13 @@ namespace SAM.Core.Windows.Forms
             }
             set
             {
+                if (Button_Cancel.Visible == value)
+                {
+                    return;
+                }
+
                 Button_Cancel.Visible = value;
+                ClientSize = new System.Drawing.Size(ClientSize.Width, value ? CancellableClientHeight : CollapsedClientHeight);
             }
         }
 
@@ -126,7 +139,13 @@ namespace SAM.Core.Windows.Forms
                 return;
             }
 
-            string elapsed = stopwatch.Elapsed.ToString(@"mm\:ss");
+            // TimeSpan "mm" is the minutes component, so a plain mm:ss wraps back to 00:00 after an hour -
+            // and a full-year TAS run can exceed that. Promote to h:mm:ss once past the hour.
+            TimeSpan elapsedTimeSpan = stopwatch.Elapsed;
+            string elapsed = elapsedTimeSpan.TotalHours >= 1.0
+                ? string.Format("{0}:{1:00}:{2:00}", (int)elapsedTimeSpan.TotalHours, elapsedTimeSpan.Minutes, elapsedTimeSpan.Seconds)
+                : string.Format("{0:00}:{1:00}", elapsedTimeSpan.Minutes, elapsedTimeSpan.Seconds);
+
             text_Temp = caption + " [" + ProgressBar_Main.Value + "/" + ProgressBar_Main.Maximum + "] " + elapsed + " " + text_Temp;
 
             if (text_Temp.Length > maxLength)

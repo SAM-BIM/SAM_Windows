@@ -49,8 +49,11 @@ namespace SAM.Core.Windows.Forms
             // 
             // ProgressBar_Main
             // 
-            this.ProgressBar_Main.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
-            | System.Windows.Forms.AnchorStyles.Left) 
+            // Not bottom-anchored: Cancellable grows the form to reveal Button_Cancel, and the bar must keep
+            // its height rather than stretch over the button. The form is FixedSingle and never user-resized,
+            // so this does not affect any existing caller.
+            this.ProgressBar_Main.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top
+            | System.Windows.Forms.AnchorStyles.Left)
             | System.Windows.Forms.AnchorStyles.Right)));
             this.ProgressBar_Main.Location = new System.Drawing.Point(13, 50);
             this.ProgressBar_Main.Margin = new System.Windows.Forms.Padding(4);
@@ -60,7 +63,8 @@ namespace SAM.Core.Windows.Forms
             //
             // Button_Cancel
             //
-            this.Button_Cancel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
+            // Fixed top-left placement so the position is deterministic when Cancellable grows the form;
+            // bottom-anchoring would be measured against the collapsed height and drift.
             this.Button_Cancel.Location = new System.Drawing.Point(311, 95);
             this.Button_Cancel.Margin = new System.Windows.Forms.Padding(4);
             this.Button_Cancel.Name = "Button_Cancel";
@@ -74,7 +78,8 @@ namespace SAM.Core.Windows.Forms
             // SimpleProgressForm
             //
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.None;
-            this.ClientSize = new System.Drawing.Size(420, 135);
+            // Original collapsed height: unchanged for every caller that does not opt into Cancellable.
+            this.ClientSize = new System.Drawing.Size(420, 98);
             this.ControlBox = false;
             this.Controls.Add(this.Button_Cancel);
             this.Controls.Add(this.ProgressBar_Main);

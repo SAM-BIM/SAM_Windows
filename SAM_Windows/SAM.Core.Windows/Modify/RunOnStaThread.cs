@@ -105,7 +105,9 @@ namespace SAM.Core.Windows
 
             if (captured != null)
             {
-                throw captured;
+                // Rethrow preserving the worker's original stack trace (a plain `throw captured` would reset
+                // it to this line and lose where inside the COM call it actually failed).
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(captured).Throw();
             }
         }
     }
