@@ -313,8 +313,11 @@ namespace SAM.Core.Windows.Forms
 
             if (!OwnsMessageLoop)
             {
+                // BringToFront keeps the dialog visible above the host window. Focus() used to follow it, which
+                // seized the keyboard on every single step: alt-tab away from a long import and it dragged you
+                // back, keystroke by keystroke. Being on top is what a progress dialog needs; taking the
+                // keyboard is not.
                 BringToFront();
-                Focus();
                 Application.DoEvents();
             }
         }
@@ -359,7 +362,11 @@ namespace SAM.Core.Windows.Forms
 
         private void SimpleProgressForm_FormClosing(object sender, FormClosingEventArgs e)
         {
-            System.Threading.Thread.Sleep(1000);
+            // Deliberately empty. This used to Thread.Sleep(1000), which blocked the thread that owns the form
+            // for a second on every single close - so every SAM operation that shows a progress dialog paid a
+            // second it did not need, and with ProgressFormHost it also delayed the join that tears the dialog
+            // thread down. Sleeping a UI thread from a FormClosing handler achieves nothing that a caller
+            // wanting a visible pause could not do on its own.
         }
 
         private void SimpleProgressForm_Load(object sender, EventArgs e)

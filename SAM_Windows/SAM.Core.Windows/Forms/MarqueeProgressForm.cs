@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace SAM.Core.Windows.Forms
@@ -21,6 +22,31 @@ namespace SAM.Core.Windows.Forms
 
         /// <summary>Whether a <see cref="Note"/> is currently set, and so whether the form is grown for it.</summary>
         private bool noted;
+
+        /// <summary>
+        /// The thread that constructed the form, which for a WinForms form is the thread that owns it. See
+        /// <see cref="SetText"/> for why this is used instead of <c>InvokeRequired</c>.
+        /// </summary>
+        private readonly int ownerThreadId = Thread.CurrentThread.ManagedThreadId;
+
+        /// <summary>
+        /// A title the worker set before the handle existed, so it could not be posted. Read and written under
+        /// <see cref="textLock"/> by <see cref="SetText"/> and <see cref="OnHandleCreated"/>.
+        /// </summary>
+        private string text_Pending;
+
+        /// <summary>
+        /// Whether <see cref="text_Pending"/> holds an update, tracked separately from its value because a null
+        /// title is a legitimate update - a tuple may carry one, and on the owning thread it blanks the caption.
+        /// Treating null as "nothing pending" would leave the previous action's title on screen instead.
+        /// </summary>
+        private bool text_PendingSet;
+
+        /// <summary>
+        /// Guards <see cref="text_Pending"/> against the publish/consume interleaving described in
+        /// <see cref="SetText"/>.
+        /// </summary>
+        private readonly object textLock = new object();
 
         /// <summary>Designer height, used while no <see cref="Note"/> is set (the default).</summary>
         private const int CollapsedClientHeight = 94;
@@ -164,23 +190,113 @@ namespace SAM.Core.Windows.Forms
             Close();
         }
 
+        /// <summary>
+        /// Runs on a thread-pool thread, so nothing here may touch a control directly. It previously assigned
+        /// ProgressBar_Main.Style, MarqueeAnimationSpeed and Text from this thread, which is an illegal
+        /// cross-thread control access - undefined at best, an InvalidOperationException at worst.
+        /// <para>
+        /// The two progress-bar assignments are simply gone: the designer and every constructor already put the
+        /// bar in marquee mode, so they were redundant as well as unsafe. The title still changes per action,
+        /// now marshalled through <see cref="SetText"/>.
+        /// </para>
+        /// </summary>
         private void BackgroundWorker_DoWork(object sender, DoWorkEventArgs e)
         {
-            ProgressBar_Main.Style = ProgressBarStyle.Marquee;
-            ProgressBar_Main.MarqueeAnimationSpeed = 30;
-
-            if(tuples != null)
+            if (tuples == null)
             {
-                foreach(Tuple<Action, string> tuple in tuples)
+                return;
+            }
+
+            foreach (Tuple<Action, string> tuple in tuples)
+            {
+                SetText(tuple.Item2);
+
+                if (tuple.Item1 != null)
                 {
-                    Text = tuple.Item2;
-                    if(tuple.Item1 != null)
+                    tuple.Item1.Invoke();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Sets the window title from whichever thread the work is running on. The owning thread is compared by
+        /// id captured at construction rather than through
+        /// <see cref="System.Windows.Forms.Control.InvokeRequired"/>, which reports false while the handle does
+        /// not exist yet and would let the assignment happen cross-thread anyway.
+        /// <para>
+        /// An update arriving before the handle exists cannot be posted, so it is held in
+        /// <see cref="text_Pending"/> and applied by <see cref="OnHandleCreated"/>. Dropping it instead would
+        /// leave the dialog showing the first action's title for the whole of a later one - with a fast first
+        /// action the worker can easily reach the second before <c>ShowDialog</c> creates the handle.
+        /// </para>
+        /// </summary>
+        private void SetText(string text)
+        {
+            if (Thread.CurrentThread.ManagedThreadId == ownerThreadId)
+            {
+                Text = text;
+                return;
+            }
+
+            try
+            {
+                if (IsDisposed)
+                {
+                    return;
+                }
+
+                // Locked against OnHandleCreated. Unsynchronized, the two could interleave so that neither
+                // applies the title: this thread reads IsHandleCreated false, the UI thread then runs
+                // OnHandleCreated and finds nothing pending, and only afterwards does this thread publish -
+                // stranding the value with nobody left to consume it. Inside the lock the handle cannot be
+                // created between the test and the publish, and OnHandleCreated always observes a handle, so
+                // exactly one of the two paths takes the title.
+                lock (textLock)
+                {
+                    if (!IsHandleCreated)
                     {
-                        tuple.Item1.Invoke();
+                        text_Pending = text;
+                        text_PendingSet = true;
+                        return;
                     }
                 }
 
-                
+                // Posted outside the lock: no need to hold it across a cross-thread post.
+                BeginInvoke(new Action(() => Text = text));
+            }
+            catch (InvalidAsynchronousStateException)
+            {
+                // the form's thread has gone away mid-run; there is nothing left to update
+            }
+            catch (ObjectDisposedException)
+            {
+                // same
+            }
+        }
+
+        /// <summary>
+        /// Applies whatever title the worker set while there was no handle to post to. Runs on the owning
+        /// thread, so the assignment is safe here.
+        /// </summary>
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+
+            // base first, so IsHandleCreated is already true inside the lock: a worker that gets the lock after
+            // this point sees the handle and posts instead of publishing a value nothing would read.
+            string text_Pending_Temp;
+            bool text_PendingSet_Temp;
+            lock (textLock)
+            {
+                text_Pending_Temp = text_Pending;
+                text_PendingSet_Temp = text_PendingSet;
+                text_Pending = null;
+                text_PendingSet = false;
+            }
+
+            if (text_PendingSet_Temp)
+            {
+                Text = text_Pending_Temp;
             }
         }
 
