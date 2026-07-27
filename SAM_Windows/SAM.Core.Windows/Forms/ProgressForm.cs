@@ -13,6 +13,14 @@ namespace SAM.Core.Windows.Forms
         private int maxLength = 80;
         private readonly Stopwatch stopwatch = Stopwatch.StartNew();
 
+        /// <summary>
+        /// Requested cancellability. Tracked separately from <c>Button_Cancel.Visible</c>, whose getter
+        /// reports *effective* visibility: on a form that has not been shown yet it reads false even after
+        /// being set true, so using it as the backing store would make a true-then-false round trip leave the
+        /// button enabled and the form expanded.
+        /// </summary>
+        private bool cancellable;
+
         /// <summary>Designer height, used when the Cancel button is hidden (the default).</summary>
         private const int CollapsedClientHeight = 98;
 
@@ -62,15 +70,16 @@ namespace SAM.Core.Windows.Forms
         {
             get
             {
-                return Button_Cancel.Visible;
+                return cancellable;
             }
             set
             {
-                if (Button_Cancel.Visible == value)
+                if (cancellable == value)
                 {
                     return;
                 }
 
+                cancellable = value;
                 Button_Cancel.Visible = value;
                 ClientSize = new System.Drawing.Size(ClientSize.Width, value ? CancellableClientHeight : CollapsedClientHeight);
             }
@@ -146,10 +155,13 @@ namespace SAM.Core.Windows.Forms
                 ? string.Format("{0}:{1:00}:{2:00}", (int)elapsedTimeSpan.TotalHours, elapsedTimeSpan.Minutes, elapsedTimeSpan.Seconds)
                 : string.Format("{0:00}:{1:00}", elapsedTimeSpan.Minutes, elapsedTimeSpan.Seconds);
 
-            text_Temp = caption + " [" + ProgressBar_Main.Value + "/" + ProgressBar_Main.Maximum + "] " + elapsed + " " + text_Temp;
+            // Counter and elapsed lead so a long caption cannot push them out of the fixed-width label; the
+            // caption and any detail are what get ellipsised. maxLength is only a coarse guard against
+            // pathological strings - actual overflow is handled width-aware by Label_Description.AutoEllipsis.
+            text_Temp = "[" + ProgressBar_Main.Value + "/" + ProgressBar_Main.Maximum + "] " + elapsed + " " + caption + " " + text_Temp;
 
             if (text_Temp.Length > maxLength)
-                text_Temp = text_Temp.Substring(0, maxLength) + "...";
+                text_Temp = text_Temp.Substring(0, maxLength);
 
             Label_Description.Text = text_Temp;
 

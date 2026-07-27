@@ -38,8 +38,12 @@ namespace SAM.Core.Windows.Forms
             // 
             // Label_Description
             // 
-            this.Label_Description.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            this.Label_Description.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
             | System.Windows.Forms.AnchorStyles.Right)));
+            // Width-aware ellipsis: the label is a fixed 391px, so any character cap is only a coarse guard.
+            // This makes overflow render as a real trailing ellipsis instead of being hard-clipped.
+            this.Label_Description.AutoSize = false;
+            this.Label_Description.AutoEllipsis = true;
             this.Label_Description.Location = new System.Drawing.Point(16, 19);
             this.Label_Description.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.Label_Description.Name = "Label_Description";
