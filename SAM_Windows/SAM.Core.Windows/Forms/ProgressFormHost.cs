@@ -34,6 +34,15 @@ namespace SAM.Core.Windows.Forms
         private bool disposed;
 
         /// <summary>
+        /// Signalled when the dialog is up, and again when its thread exits. A field rather than a local
+        /// disposed by the constructor: the dialog thread still signals it after <c>Application.Run</c>
+        /// returns, and setting a disposed <see cref="ManualResetEventSlim"/> throws on a background thread
+        /// with no catch above it, which takes the whole host process down. Disposed in
+        /// <see cref="Dispose"/>, after the thread has been joined.
+        /// </summary>
+        private readonly ManualResetEventSlim manualResetEventSlim = new ManualResetEventSlim(false);
+
+        /// <summary>
         /// Raised on the dialog's thread when the user clicks Cancel, so a handler must be safe to call from a
         /// thread other than the one running the job. Cancelling a <c>CancellationTokenSource</c> is.
         /// </summary>
@@ -46,50 +55,63 @@ namespace SAM.Core.Windows.Forms
         /// <param name="note">Initial note text; see <see cref="ProgressForm.Note"/>.</param>
         public ProgressFormHost(string name, int max, bool cancellable, string note)
         {
-            using (ManualResetEventSlim manualResetEventSlim = new ManualResetEventSlim(false))
+            thread = new Thread(() =>
             {
-                thread = new Thread(() =>
+                ProgressForm progressForm_Temp = new ProgressForm(name, max, false)
                 {
-                    ProgressForm progressForm_Temp = new ProgressForm(name, max, false)
-                    {
-                        // Not owned by the host application's main window: an owner must live on the same
-                        // thread as the owned form, and this one deliberately does not. TopMost keeps it in
-                        // front of the frozen host instead.
-                        TopMost = true,
-                        StartPosition = FormStartPosition.CenterScreen,
-                        OwnsMessageLoop = true,
-                        Cancellable = cancellable,
-                    };
-
-                    progressForm_Temp.Note = note;
-                    progressForm_Temp.CancelRequested += (s, e) => CancelRequested?.Invoke(this, EventArgs.Empty);
-
-                    // Set before the loop starts so the caller never sees a null form once it is released.
-                    progressForm_Temp.Load += (s, e) => manualResetEventSlim.Set();
-                    progressForm = progressForm_Temp;
-
-                    try
-                    {
-                        Application.Run(progressForm_Temp);
-                    }
-                    finally
-                    {
-                        // Release the caller even if the form failed before Load, rather than making it wait
-                        // out the timeout below.
-                        manualResetEventSlim.Set();
-                        progressForm_Temp.Dispose();
-                    }
-                })
-                {
-                    IsBackground = true,
-                    Name = "sam-progress-ui",
+                    // Not owned by the host application's main window: an owner must live on the same
+                    // thread as the owned form, and this one deliberately does not. TopMost keeps it in
+                    // front of the frozen host instead.
+                    TopMost = true,
+                    StartPosition = FormStartPosition.CenterScreen,
+                    OwnsMessageLoop = true,
+                    Cancellable = cancellable,
                 };
 
-                thread.SetApartmentState(ApartmentState.STA);
-                thread.Start();
+                progressForm_Temp.Note = note;
+                progressForm_Temp.CancelRequested += (s, e) => CancelRequested?.Invoke(this, EventArgs.Empty);
 
-                // Bounded: a dialog that will not come up must never hold up the job it is reporting on.
-                manualResetEventSlim.Wait(5000);
+                // Set before the loop starts so the caller never sees a null form once it is released.
+                progressForm_Temp.Load += (s, e) => Release();
+                progressForm = progressForm_Temp;
+
+                try
+                {
+                    Application.Run(progressForm_Temp);
+                }
+                finally
+                {
+                    // Release the caller even if the form failed before Load, rather than making it wait
+                    // out the timeout below.
+                    Release();
+                    progressForm_Temp.Dispose();
+                }
+            })
+            {
+                IsBackground = true,
+                Name = "sam-progress-ui",
+            };
+
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+
+            // Bounded: a dialog that will not come up must never hold up the job it is reporting on.
+            manualResetEventSlim.Wait(5000);
+        }
+
+        /// <summary>
+        /// Signals the readiness event, tolerating a Dispose that has already run — the thread signals once
+        /// more on its way out, and if a join timed out that can land after disposal. An unhandled exception
+        /// on this thread would terminate the host process, so it is swallowed deliberately.
+        /// </summary>
+        private void Release()
+        {
+            try
+            {
+                manualResetEventSlim.Set();
+            }
+            catch (ObjectDisposedException)
+            {
             }
         }
 
@@ -175,6 +197,10 @@ namespace SAM.Core.Windows.Forms
             thread?.Join(5000);
 
             progressForm = null;
+
+            // After the join, so the dialog thread cannot still be signalling it. Release() covers the case
+            // where that join timed out and the thread is somehow still alive.
+            manualResetEventSlim.Dispose();
         }
     }
 }

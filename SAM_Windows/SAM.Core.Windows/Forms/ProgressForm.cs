@@ -337,7 +337,14 @@ namespace SAM.Core.Windows.Forms
         {
             // Both times carry explicit units (see Query.Duration) so the number can never be misread as
             // mm:ss vs hh:mm, and "step"/"total" name which is which.
-            string times = "step " + Query.Duration(stepStopwatch.Elapsed) + " | total " + Query.Duration(stopwatch.Elapsed);
+            //
+            // The step time is only shown when a message loop of our own is refreshing it. Every caller
+            // announces a step and then does the work synchronously, so without that timer the step clock is
+            // read immediately after being restarted and reads "0s" for the entire stage - a permanent zero
+            // is worse than no number at all.
+            string times = OwnsMessageLoop
+                ? "step " + Query.Duration(stepStopwatch.Elapsed) + " | total " + Query.Duration(stopwatch.Elapsed)
+                : "total " + Query.Duration(stopwatch.Elapsed);
 
             // Counter and times lead so a long caption cannot push them out of the fixed-width label; the
             // caption and any detail are what get ellipsised. maxLength is only a coarse guard against
