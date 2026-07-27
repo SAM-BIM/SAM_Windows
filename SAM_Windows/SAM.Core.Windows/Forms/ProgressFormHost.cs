@@ -31,7 +31,14 @@ namespace SAM.Core.Windows.Forms
     {
         private readonly Thread thread;
         private volatile ProgressForm progressForm;
-        private bool disposed;
+
+        /// <summary>
+        /// Volatile because the dialog thread reads it while starting up. The constructor's wait is bounded,
+        /// so a caller can be handed the host — and finish the job and dispose it — before this thread has a
+        /// window handle. Without this the thread would go on to open a topmost dialog that nothing is left to
+        /// close, leaving it stranded over the host application for the rest of the session.
+        /// </summary>
+        private volatile bool disposed;
 
         /// <summary>
         /// Signalled when the dialog is up, and again when its thread exits. A field rather than a local
@@ -71,13 +78,29 @@ namespace SAM.Core.Windows.Forms
                 progressForm_Temp.Note = note;
                 progressForm_Temp.CancelRequested += (s, e) => CancelRequested?.Invoke(this, EventArgs.Empty);
 
+                progressForm_Temp.Load += (s, e) =>
+                {
+                    Release();
+
+                    // Disposed between the check below and getting a handle: close now that there is a loop
+                    // to close. Together with that check this leaves no window in which the dialog can open
+                    // and stay open.
+                    if (disposed)
+                    {
+                        progressForm_Temp.Close();
+                    }
+                };
+
                 // Set before the loop starts so the caller never sees a null form once it is released.
-                progressForm_Temp.Load += (s, e) => Release();
                 progressForm = progressForm_Temp;
 
                 try
                 {
-                    Application.Run(progressForm_Temp);
+                    // Already disposed while this thread was starting up: never open the window at all.
+                    if (!disposed)
+                    {
+                        Application.Run(progressForm_Temp);
+                    }
                 }
                 finally
                 {
