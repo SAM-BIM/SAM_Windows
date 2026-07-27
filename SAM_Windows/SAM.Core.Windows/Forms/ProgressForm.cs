@@ -24,8 +24,17 @@ namespace SAM.Core.Windows.Forms
         /// <summary>Designer height, used when the Cancel button is hidden (the default).</summary>
         private const int CollapsedClientHeight = 98;
 
-        /// <summary>Height needed to show the Cancel button beneath the progress bar.</summary>
-        private const int CancellableClientHeight = 135;
+        /// <summary>Height needed to show the note line and the Cancel button.</summary>
+        private const int CancellableClientHeight = 160;
+
+        /// <summary>Progress bar top in the collapsed layout (the original designer position).</summary>
+        private const int ProgressBarTopCollapsed = 50;
+
+        /// <summary>Progress bar top when expanded, leaving room for the note line above it.</summary>
+        private const int ProgressBarTopExpanded = 70;
+
+        /// <summary>Time spent in the current step; restarted on each increment.</summary>
+        private readonly Stopwatch stepStopwatch = Stopwatch.StartNew();
 
         /// <summary>
         /// Raised on the UI thread when the user clicks Cancel. Because <see cref="Update"/> pumps the
@@ -81,8 +90,55 @@ namespace SAM.Core.Windows.Forms
 
                 cancellable = value;
                 Button_Cancel.Visible = value;
+                Label_Note.Visible = value;
+                ProgressBar_Main.Top = value ? ProgressBarTopExpanded : ProgressBarTopCollapsed;
                 ClientSize = new System.Drawing.Size(ClientSize.Width, value ? CancellableClientHeight : CollapsedClientHeight);
             }
+        }
+
+        /// <summary>
+        /// Secondary line shown under the main text while <see cref="Cancellable"/> is set — use it to say what
+        /// the Cancel button can and cannot interrupt. Ignored visually when the form is not cancellable.
+        /// </summary>
+        public string Note
+        {
+            get
+            {
+                return Label_Note.Text;
+            }
+            set
+            {
+                if (string.Equals(Label_Note.Text, value, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                Label_Note.Text = value ?? string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// Formats a duration with explicit units so the number is never ambiguous: seconds under a minute,
+        /// then minutes and seconds, then hours, minutes and seconds.
+        /// </summary>
+        public static string FormatDuration(TimeSpan timeSpan)
+        {
+            if (timeSpan.TotalSeconds < 1.0)
+            {
+                return "0s";
+            }
+
+            if (timeSpan.TotalMinutes < 1.0)
+            {
+                return string.Format("{0}s", (int)timeSpan.TotalSeconds);
+            }
+
+            if (timeSpan.TotalHours < 1.0)
+            {
+                return string.Format("{0}m {1:00}s", (int)timeSpan.TotalMinutes, timeSpan.Seconds);
+            }
+
+            return string.Format("{0}h {1:00}m {2:00}s", (int)timeSpan.TotalHours, timeSpan.Minutes, timeSpan.Seconds);
         }
 
         /// <summary>True once the user has clicked Cancel.</summary>
@@ -96,7 +152,8 @@ namespace SAM.Core.Windows.Forms
         {
             CancellationRequested = true;
             Button_Cancel.Enabled = false;
-            Label_Description.Text = "Cancelling... (finishing current step)";
+            Label_Description.Text = "Cancelling... (finishing current step) | total " + FormatDuration(stopwatch.Elapsed);
+            Label_Note.Text = "The current stage cannot be interrupted - it must finish before the run stops.";
             Refresh();
             CancelRequested?.Invoke(this, System.EventArgs.Empty);
             Application.DoEvents();
@@ -138,6 +195,7 @@ namespace SAM.Core.Windows.Forms
                 ProgressBar_Main.PerformStep();
                 caption = text_Temp;
                 text_Temp = string.Empty;
+                stepStopwatch.Restart();
             }
 
             // Once the user has asked to cancel, keep the "Cancelling..." message on screen rather than
@@ -148,17 +206,14 @@ namespace SAM.Core.Windows.Forms
                 return;
             }
 
-            // TimeSpan "mm" is the minutes component, so a plain mm:ss wraps back to 00:00 after an hour -
-            // and a full-year TAS run can exceed that. Promote to h:mm:ss once past the hour.
-            TimeSpan elapsedTimeSpan = stopwatch.Elapsed;
-            string elapsed = elapsedTimeSpan.TotalHours >= 1.0
-                ? string.Format("{0}:{1:00}:{2:00}", (int)elapsedTimeSpan.TotalHours, elapsedTimeSpan.Minutes, elapsedTimeSpan.Seconds)
-                : string.Format("{0:00}:{1:00}", elapsedTimeSpan.Minutes, elapsedTimeSpan.Seconds);
+            // Both times carry explicit units (see FormatDuration) so the number can never be misread as
+            // mm:ss vs hh:mm, and "step"/"total" name which is which.
+            string times = "step " + FormatDuration(stepStopwatch.Elapsed) + " | total " + FormatDuration(stopwatch.Elapsed);
 
-            // Counter and elapsed lead so a long caption cannot push them out of the fixed-width label; the
+            // Counter and times lead so a long caption cannot push them out of the fixed-width label; the
             // caption and any detail are what get ellipsised. maxLength is only a coarse guard against
             // pathological strings - actual overflow is handled width-aware by Label_Description.AutoEllipsis.
-            text_Temp = "[" + ProgressBar_Main.Value + "/" + ProgressBar_Main.Maximum + "] " + elapsed + " " + caption + " " + text_Temp;
+            text_Temp = "[" + ProgressBar_Main.Value + "/" + ProgressBar_Main.Maximum + "] " + times + " | " + caption + " " + text_Temp;
 
             if (text_Temp.Length > maxLength)
                 text_Temp = text_Temp.Substring(0, maxLength);

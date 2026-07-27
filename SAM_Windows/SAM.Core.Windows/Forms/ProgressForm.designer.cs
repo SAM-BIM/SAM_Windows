@@ -32,6 +32,7 @@ namespace SAM.Core.Windows.Forms
         private void InitializeComponent()
         {
             this.Label_Description = new System.Windows.Forms.Label();
+            this.Label_Note = new System.Windows.Forms.Label();
             this.ProgressBar_Main = new System.Windows.Forms.ProgressBar();
             this.Button_Cancel = new System.Windows.Forms.Button();
             this.SuspendLayout();
@@ -50,9 +51,26 @@ namespace SAM.Core.Windows.Forms
             this.Label_Description.Size = new System.Drawing.Size(391, 21);
             this.Label_Description.TabIndex = 0;
             this.Label_Description.Text = "Waiting...";
-            // 
+            //
+            // Label_Note
+            //
+            // Secondary line under the main text, shown only when the form is Cancellable. Carries the note
+            // about what the Cancel button can and cannot interrupt.
+            this.Label_Note.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top
+            | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.Label_Note.AutoSize = false;
+            this.Label_Note.AutoEllipsis = true;
+            this.Label_Note.ForeColor = System.Drawing.SystemColors.GrayText;
+            this.Label_Note.Location = new System.Drawing.Point(16, 44);
+            this.Label_Note.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            this.Label_Note.Name = "Label_Note";
+            this.Label_Note.Size = new System.Drawing.Size(391, 18);
+            this.Label_Note.TabIndex = 3;
+            this.Label_Note.Visible = false;
+            //
             // ProgressBar_Main
-            // 
+            //
             // Not bottom-anchored: Cancellable grows the form to reveal Button_Cancel, and the bar must keep
             // its height rather than stretch over the button. The form is FixedSingle and never user-resized,
             // so this does not affect any existing caller.
@@ -69,7 +87,7 @@ namespace SAM.Core.Windows.Forms
             //
             // Fixed top-left placement so the position is deterministic when Cancellable grows the form;
             // bottom-anchoring would be measured against the collapsed height and drift.
-            this.Button_Cancel.Location = new System.Drawing.Point(311, 95);
+            this.Button_Cancel.Location = new System.Drawing.Point(311, 118);
             this.Button_Cancel.Margin = new System.Windows.Forms.Padding(4);
             this.Button_Cancel.Name = "Button_Cancel";
             this.Button_Cancel.Size = new System.Drawing.Size(96, 30);
@@ -86,6 +104,7 @@ namespace SAM.Core.Windows.Forms
             this.ClientSize = new System.Drawing.Size(420, 98);
             this.ControlBox = false;
             this.Controls.Add(this.Button_Cancel);
+            this.Controls.Add(this.Label_Note);
             this.Controls.Add(this.ProgressBar_Main);
             this.Controls.Add(this.Label_Description);
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
@@ -106,6 +125,7 @@ namespace SAM.Core.Windows.Forms
         #endregion
 
         private System.Windows.Forms.Label Label_Description;
+        private System.Windows.Forms.Label Label_Note;
         private System.Windows.Forms.ProgressBar ProgressBar_Main;
         private System.Windows.Forms.Button Button_Cancel;
     }
