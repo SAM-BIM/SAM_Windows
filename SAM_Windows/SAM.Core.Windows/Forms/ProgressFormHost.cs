@@ -41,6 +41,14 @@ namespace SAM.Core.Windows.Forms
         private volatile bool disposed;
 
         /// <summary>
+        /// Whatever killed the dialog thread, if anything. Rethrown by the constructor when it happened during
+        /// startup; if it happened later, inside the message loop, the constructor has already returned and it
+        /// is surfaced through <see cref="Exception"/> instead. Either way it is never allowed to escape the
+        /// thread itself.
+        /// </summary>
+        private volatile Exception exception_Startup;
+
+        /// <summary>
         /// Signalled when the dialog is up, and again when its thread exits. A field rather than a local
         /// disposed by the constructor: the dialog thread still signals it after <c>Application.Run</c>
         /// returns, and setting a disposed <see cref="ManualResetEventSlim"/> throws on a background thread
@@ -64,50 +72,64 @@ namespace SAM.Core.Windows.Forms
         {
             thread = new Thread(() =>
             {
-                ProgressForm progressForm_Temp = new ProgressForm(name, max, false)
-                {
-                    // Not owned by the host application's main window: an owner must live on the same
-                    // thread as the owned form, and this one deliberately does not. TopMost keeps it in
-                    // front of the frozen host instead.
-                    TopMost = true,
-                    StartPosition = FormStartPosition.CenterScreen,
-                    OwnsMessageLoop = true,
-                    Cancellable = cancellable,
-                };
+                ProgressForm progressForm_Temp = null;
 
-                progressForm_Temp.Note = note;
-                progressForm_Temp.CancelRequested += (s, e) => CancelRequested?.Invoke(this, EventArgs.Empty);
-
-                progressForm_Temp.Load += (s, e) =>
-                {
-                    Release();
-
-                    // Disposed between the check below and getting a handle: close now that there is a loop
-                    // to close. Together with that check this leaves no window in which the dialog can open
-                    // and stay open.
-                    if (disposed)
-                    {
-                        progressForm_Temp.Close();
-                    }
-                };
-
-                // Set before the loop starts so the caller never sees a null form once it is released.
-                progressForm = progressForm_Temp;
-
+                // Everything on this thread is inside the try, construction included: an exception escaping a
+                // raw thread terminates the process under the default .NET policy, and a progress dialog must
+                // never be able to take the host application down. Constructing the form can throw on its own
+                // (a negative max, for one), which happens before any of the code below runs.
                 try
                 {
+                    progressForm_Temp = new ProgressForm(name, max, false)
+                    {
+                        // Not owned by the host application's main window: an owner must live on the same
+                        // thread as the owned form, and this one deliberately does not. TopMost keeps it in
+                        // front of the frozen host instead.
+                        TopMost = true,
+                        StartPosition = FormStartPosition.CenterScreen,
+                        OwnsMessageLoop = true,
+                        Cancellable = cancellable,
+                    };
+
+                    progressForm_Temp.Note = note;
+                    progressForm_Temp.CancelRequested += (s, e) => CancelRequested?.Invoke(this, EventArgs.Empty);
+
+                    progressForm_Temp.Load += (s, e) =>
+                    {
+                        Release();
+
+                        // Disposed between the check below and getting a handle: close now that there is a
+                        // loop to close. Together with that check this leaves no window in which the dialog
+                        // can open and stay open.
+                        if (disposed)
+                        {
+                            progressForm_Temp.Close();
+                        }
+                    };
+
+                    // Set before the loop starts so the caller never sees a null form once it is released.
+                    progressForm = progressForm_Temp;
+
                     // Already disposed while this thread was starting up: never open the window at all.
                     if (!disposed)
                     {
                         Application.Run(progressForm_Temp);
                     }
                 }
+                catch (Exception exception)
+                {
+                    exception_Startup = exception;
+                }
                 finally
                 {
-                    // Release the caller even if the form failed before Load, rather than making it wait
-                    // out the timeout below.
+                    // Release the caller even if the form failed before Load, rather than making it wait out
+                    // the timeout below.
                     Release();
-                    progressForm_Temp.Dispose();
+
+                    if (progressForm_Temp != null)
+                    {
+                        progressForm_Temp.Dispose();
+                    }
                 }
             })
             {
@@ -120,6 +142,18 @@ namespace SAM.Core.Windows.Forms
 
             // Bounded: a dialog that will not come up must never hold up the job it is reporting on.
             manualResetEventSlim.Wait(5000);
+
+            if (exception_Startup != null)
+            {
+                // The dialog never came up, so hand the caller a failure rather than a live-looking host that
+                // silently reports nothing. Construction failed, so nothing will call Dispose - clean up here.
+                disposed = true;
+                thread.Join(5000);
+                manualResetEventSlim.Dispose();
+
+                // Rethrow preserving the original stack, so the real cause is not replaced by this line.
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception_Startup).Throw();
+            }
         }
 
         /// <summary>
@@ -135,6 +169,19 @@ namespace SAM.Core.Windows.Forms
             }
             catch (ObjectDisposedException)
             {
+            }
+        }
+
+        /// <summary>
+        /// Non-null when the dialog thread died of an exception raised inside its message loop, after the
+        /// constructor had already returned. The dialog is gone; the job it was reporting on is unaffected and
+        /// keeps running, which is why this is reported rather than thrown.
+        /// </summary>
+        public Exception Exception
+        {
+            get
+            {
+                return exception_Startup;
             }
         }
 
