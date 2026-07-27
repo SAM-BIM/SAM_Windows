@@ -30,6 +30,7 @@
         {
             this.Label_Description = new System.Windows.Forms.Label();
             this.ProgressBar_Main = new System.Windows.Forms.ProgressBar();
+            this.Button_Cancel = new System.Windows.Forms.Button();
             this.SuspendLayout();
             // 
             // Label_Description
@@ -53,12 +54,26 @@
             this.ProgressBar_Main.Name = "ProgressBar_Main";
             this.ProgressBar_Main.Size = new System.Drawing.Size(394, 35);
             this.ProgressBar_Main.TabIndex = 1;
-            // 
+            //
+            // Button_Cancel
+            //
+            this.Button_Cancel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
+            this.Button_Cancel.Location = new System.Drawing.Point(311, 95);
+            this.Button_Cancel.Margin = new System.Windows.Forms.Padding(4);
+            this.Button_Cancel.Name = "Button_Cancel";
+            this.Button_Cancel.Size = new System.Drawing.Size(96, 30);
+            this.Button_Cancel.TabIndex = 2;
+            this.Button_Cancel.Text = "Cancel";
+            this.Button_Cancel.UseVisualStyleBackColor = true;
+            this.Button_Cancel.Visible = false;
+            this.Button_Cancel.Click += new System.EventHandler(this.Button_Cancel_Click);
+            //
             // SimpleProgressForm
-            // 
+            //
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.None;
-            this.ClientSize = new System.Drawing.Size(420, 98);
+            this.ClientSize = new System.Drawing.Size(420, 135);
             this.ControlBox = false;
+            this.Controls.Add(this.Button_Cancel);
             this.Controls.Add(this.ProgressBar_Main);
             this.Controls.Add(this.Label_Description);
             this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
@@ -80,5 +95,6 @@
 
         private System.Windows.Forms.Label Label_Description;
         private System.Windows.Forms.ProgressBar ProgressBar_Main;
+        private System.Windows.Forms.Button Button_Cancel;
     }
 }
