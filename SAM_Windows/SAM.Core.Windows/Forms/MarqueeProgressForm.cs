@@ -30,10 +30,16 @@ namespace SAM.Core.Windows.Forms
         private readonly int ownerThreadId = Thread.CurrentThread.ManagedThreadId;
 
         /// <summary>
-        /// A title the worker set before the handle existed, so it could not be posted. Volatile because it is
-        /// written on the worker thread and read by <see cref="OnHandleCreated"/> on the owning one.
+        /// A title the worker set before the handle existed, so it could not be posted. Read and written under
+        /// <see cref="textLock"/> by <see cref="SetText"/> and <see cref="OnHandleCreated"/>.
         /// </summary>
-        private volatile string text_Pending;
+        private string text_Pending;
+
+        /// <summary>
+        /// Guards <see cref="text_Pending"/> against the publish/consume interleaving described in
+        /// <see cref="SetText"/>.
+        /// </summary>
+        private readonly object textLock = new object();
 
         /// <summary>Designer height, used while no <see cref="Note"/> is set (the default).</summary>
         private const int CollapsedClientHeight = 94;
@@ -232,12 +238,22 @@ namespace SAM.Core.Windows.Forms
                     return;
                 }
 
-                if (!IsHandleCreated)
+                // Locked against OnHandleCreated. Unsynchronized, the two could interleave so that neither
+                // applies the title: this thread reads IsHandleCreated false, the UI thread then runs
+                // OnHandleCreated and finds nothing pending, and only afterwards does this thread publish -
+                // stranding the value with nobody left to consume it. Inside the lock the handle cannot be
+                // created between the test and the publish, and OnHandleCreated always observes a handle, so
+                // exactly one of the two paths takes the title.
+                lock (textLock)
                 {
-                    text_Pending = text;
-                    return;
+                    if (!IsHandleCreated)
+                    {
+                        text_Pending = text;
+                        return;
+                    }
                 }
 
+                // Posted outside the lock: no need to hold it across a cross-thread post.
                 BeginInvoke(new Action(() => Text = text));
             }
             catch (InvalidAsynchronousStateException)
@@ -258,10 +274,17 @@ namespace SAM.Core.Windows.Forms
         {
             base.OnHandleCreated(e);
 
-            string text_Pending_Temp = text_Pending;
+            // base first, so IsHandleCreated is already true inside the lock: a worker that gets the lock after
+            // this point sees the handle and posts instead of publishing a value nothing would read.
+            string text_Pending_Temp;
+            lock (textLock)
+            {
+                text_Pending_Temp = text_Pending;
+                text_Pending = null;
+            }
+
             if (text_Pending_Temp != null)
             {
-                text_Pending = null;
                 Text = text_Pending_Temp;
             }
         }
