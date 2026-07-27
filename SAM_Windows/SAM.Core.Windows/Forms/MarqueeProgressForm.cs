@@ -29,6 +29,12 @@ namespace SAM.Core.Windows.Forms
         /// </summary>
         private readonly int ownerThreadId = Thread.CurrentThread.ManagedThreadId;
 
+        /// <summary>
+        /// A title the worker set before the handle existed, so it could not be posted. Volatile because it is
+        /// written on the worker thread and read by <see cref="OnHandleCreated"/> on the owning one.
+        /// </summary>
+        private volatile string text_Pending;
+
         /// <summary>Designer height, used while no <see cref="Note"/> is set (the default).</summary>
         private const int CollapsedClientHeight = 94;
 
@@ -203,8 +209,13 @@ namespace SAM.Core.Windows.Forms
         /// Sets the window title from whichever thread the work is running on. The owning thread is compared by
         /// id captured at construction rather than through
         /// <see cref="System.Windows.Forms.Control.InvokeRequired"/>, which reports false while the handle does
-        /// not exist yet and would let the assignment happen cross-thread anyway. A title update arriving before
-        /// the handle exists is dropped; the constructor has already set it from the first action.
+        /// not exist yet and would let the assignment happen cross-thread anyway.
+        /// <para>
+        /// An update arriving before the handle exists cannot be posted, so it is held in
+        /// <see cref="text_Pending"/> and applied by <see cref="OnHandleCreated"/>. Dropping it instead would
+        /// leave the dialog showing the first action's title for the whole of a later one - with a fast first
+        /// action the worker can easily reach the second before <c>ShowDialog</c> creates the handle.
+        /// </para>
         /// </summary>
         private void SetText(string text)
         {
@@ -216,10 +227,18 @@ namespace SAM.Core.Windows.Forms
 
             try
             {
-                if (IsHandleCreated && !IsDisposed)
+                if (IsDisposed)
                 {
-                    BeginInvoke(new Action(() => Text = text));
+                    return;
                 }
+
+                if (!IsHandleCreated)
+                {
+                    text_Pending = text;
+                    return;
+                }
+
+                BeginInvoke(new Action(() => Text = text));
             }
             catch (InvalidAsynchronousStateException)
             {
@@ -228,6 +247,22 @@ namespace SAM.Core.Windows.Forms
             catch (ObjectDisposedException)
             {
                 // same
+            }
+        }
+
+        /// <summary>
+        /// Applies whatever title the worker set while there was no handle to post to. Runs on the owning
+        /// thread, so the assignment is safe here.
+        /// </summary>
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+
+            string text_Pending_Temp = text_Pending;
+            if (text_Pending_Temp != null)
+            {
+                text_Pending = null;
+                Text = text_Pending_Temp;
             }
         }
 
