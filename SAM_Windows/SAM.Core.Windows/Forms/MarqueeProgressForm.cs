@@ -36,6 +36,13 @@ namespace SAM.Core.Windows.Forms
         private string text_Pending;
 
         /// <summary>
+        /// Whether <see cref="text_Pending"/> holds an update, tracked separately from its value because a null
+        /// title is a legitimate update - a tuple may carry one, and on the owning thread it blanks the caption.
+        /// Treating null as "nothing pending" would leave the previous action's title on screen instead.
+        /// </summary>
+        private bool text_PendingSet;
+
+        /// <summary>
         /// Guards <see cref="text_Pending"/> against the publish/consume interleaving described in
         /// <see cref="SetText"/>.
         /// </summary>
@@ -249,6 +256,7 @@ namespace SAM.Core.Windows.Forms
                     if (!IsHandleCreated)
                     {
                         text_Pending = text;
+                        text_PendingSet = true;
                         return;
                     }
                 }
@@ -277,13 +285,16 @@ namespace SAM.Core.Windows.Forms
             // base first, so IsHandleCreated is already true inside the lock: a worker that gets the lock after
             // this point sees the handle and posts instead of publishing a value nothing would read.
             string text_Pending_Temp;
+            bool text_PendingSet_Temp;
             lock (textLock)
             {
                 text_Pending_Temp = text_Pending;
+                text_PendingSet_Temp = text_PendingSet;
                 text_Pending = null;
+                text_PendingSet = false;
             }
 
-            if (text_Pending_Temp != null)
+            if (text_PendingSet_Temp)
             {
                 Text = text_Pending_Temp;
             }
