@@ -31,10 +31,16 @@ namespace SAM.Core.Windows.Forms
         /// </summary>
         private void InitializeComponent()
         {
+            this.components = new System.ComponentModel.Container();
             this.Label_Description = new System.Windows.Forms.Label();
             this.Label_Note = new System.Windows.Forms.Label();
             this.ProgressBar_Main = new System.Windows.Forms.ProgressBar();
             this.Button_Cancel = new System.Windows.Forms.Button();
+            // Owned by components so the designer Dispose above stops and releases it with the form. Disabled
+            // until ProgressFormHost turns it on - see ProgressForm.OwnsMessageLoop.
+            this.Timer_Elapsed = new System.Windows.Forms.Timer(this.components);
+            this.Timer_Elapsed.Interval = 500;
+            this.Timer_Elapsed.Tick += new System.EventHandler(this.Timer_Elapsed_Tick);
             this.SuspendLayout();
             // 
             // Label_Description
@@ -130,5 +136,6 @@ namespace SAM.Core.Windows.Forms
         private System.Windows.Forms.Label Label_Note;
         private System.Windows.Forms.ProgressBar ProgressBar_Main;
         private System.Windows.Forms.Button Button_Cancel;
+        private System.Windows.Forms.Timer Timer_Elapsed;
     }
 }
