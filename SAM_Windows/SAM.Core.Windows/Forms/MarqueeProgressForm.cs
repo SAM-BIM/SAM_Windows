@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace SAM.Core.Windows.Forms
@@ -21,6 +22,12 @@ namespace SAM.Core.Windows.Forms
 
         /// <summary>Whether a <see cref="Note"/> is currently set, and so whether the form is grown for it.</summary>
         private bool noted;
+
+        /// <summary>
+        /// The thread that constructed the form, which for a WinForms form is the thread that owns it. See
+        /// <see cref="SetText"/> for why this is used instead of <c>InvokeRequired</c>.
+        /// </summary>
+        private readonly int ownerThreadId = Thread.CurrentThread.ManagedThreadId;
 
         /// <summary>Designer height, used while no <see cref="Note"/> is set (the default).</summary>
         private const int CollapsedClientHeight = 94;
@@ -164,23 +171,63 @@ namespace SAM.Core.Windows.Forms
             Close();
         }
 
+        /// <summary>
+        /// Runs on a thread-pool thread, so nothing here may touch a control directly. It previously assigned
+        /// ProgressBar_Main.Style, MarqueeAnimationSpeed and Text from this thread, which is an illegal
+        /// cross-thread control access - undefined at best, an InvalidOperationException at worst.
+        /// <para>
+        /// The two progress-bar assignments are simply gone: the designer and every constructor already put the
+        /// bar in marquee mode, so they were redundant as well as unsafe. The title still changes per action,
+        /// now marshalled through <see cref="SetText"/>.
+        /// </para>
+        /// </summary>
         private void BackgroundWorker_DoWork(object sender, DoWorkEventArgs e)
         {
-            ProgressBar_Main.Style = ProgressBarStyle.Marquee;
-            ProgressBar_Main.MarqueeAnimationSpeed = 30;
-
-            if(tuples != null)
+            if (tuples == null)
             {
-                foreach(Tuple<Action, string> tuple in tuples)
-                {
-                    Text = tuple.Item2;
-                    if(tuple.Item1 != null)
-                    {
-                        tuple.Item1.Invoke();
-                    }
-                }
+                return;
+            }
 
-                
+            foreach (Tuple<Action, string> tuple in tuples)
+            {
+                SetText(tuple.Item2);
+
+                if (tuple.Item1 != null)
+                {
+                    tuple.Item1.Invoke();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Sets the window title from whichever thread the work is running on. The owning thread is compared by
+        /// id captured at construction rather than through
+        /// <see cref="System.Windows.Forms.Control.InvokeRequired"/>, which reports false while the handle does
+        /// not exist yet and would let the assignment happen cross-thread anyway. A title update arriving before
+        /// the handle exists is dropped; the constructor has already set it from the first action.
+        /// </summary>
+        private void SetText(string text)
+        {
+            if (Thread.CurrentThread.ManagedThreadId == ownerThreadId)
+            {
+                Text = text;
+                return;
+            }
+
+            try
+            {
+                if (IsHandleCreated && !IsDisposed)
+                {
+                    BeginInvoke(new Action(() => Text = text));
+                }
+            }
+            catch (InvalidAsynchronousStateException)
+            {
+                // the form's thread has gone away mid-run; there is nothing left to update
+            }
+            catch (ObjectDisposedException)
+            {
+                // same
             }
         }
 
