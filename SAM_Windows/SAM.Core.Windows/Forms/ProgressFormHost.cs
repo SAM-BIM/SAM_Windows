@@ -375,52 +375,39 @@ namespace SAM.Core.Windows.Forms
                     if (progressForm_Temp.IsHandleCreated && !progressForm_Temp.IsDisposed)
                     {
                         // Let input the user has already generated - a Cancel click above all - be dispatched
-                        // before the close is posted. This is the WinForms form of the same failure the
+                        // before the form is closed. This is the WinForms form of the same failure the
                         // dispatcher twin fixes with priorities, and the mechanism is different enough to be
                         // worth stating: GetMessage hands back SENT messages, then POSTED messages, and only
                         // then INPUT. Control.BeginInvoke posts, so a bare BeginInvoke(Close) is retrieved
                         // ahead of a WM_LBUTTONUP already sitting in the input queue and tears the window down
                         // over the top of the click - the run then reports success after the user asked it to
                         // stop, which is precisely the failure this class exists to prevent, one layer down.
-                        // Application.DoEvents drains input as well as posted work, so running it on the
-                        // dialog thread first gets the click processed and latched.
+                        // Application.DoEvents drains input as well as posted work, so pumping before closing
+                        // gets the click processed and latched.
                         //
-                        // Bounded, and via BeginInvoke rather than Invoke because Control.Invoke has no
-                        // timeout overload: a dialog thread that has wedged must not take the host with it.
-                        // A drain that times out falls through to the close anyway - no worse than before.
-                        try
+                        // Drain and close are ONE callback, deliberately. Splitting them into two posts is
+                        // what an earlier revision did, and it opened a worse hole than it closed: DoEvents
+                        // dispatches whatever input is queued, so a title-bar-X or Alt+F4 sitting in that
+                        // queue closes AND disposes the form, and the second post then throws
+                        // InvalidOperationException - out of a Dispose that callers run from a finally,
+                        // replacing the job's own exception and skipping the join and the quiescence
+                        // handshake below. Running both on the dialog thread removes the gap entirely, and
+                        // the IsDisposed check is reliable there because nothing else can close the form
+                        // behind our back on the thread that owns it.
+                        //
+                        // No bounded wait on this post: closing the form ends Application.Run, which ends the
+                        // thread, so the Join below already bounds the whole thing. Anything DoEvents throws
+                        // is captured by WinForms in the IAsyncResult and dropped, which is the right trade
+                        // here - a diagnostic lost is better than an exception out of a finally.
+                        progressForm_Temp.BeginInvoke(new Action(() =>
                         {
-                            IAsyncResult asyncResult = progressForm_Temp.BeginInvoke(new Action(Application.DoEvents));
+                            Application.DoEvents();
 
-                            // EndInvoke only when the wait actually succeeded - it is what releases the wait
-                            // handle that reading AsyncWaitHandle allocated. Calling it after a timeout would
-                            // block until the wedged thread got round to us, which is the one thing this must
-                            // not do. It also rethrows anything DoEvents raised, which is swallowed here
-                            // rather than allowed out of Dispose: callers invoke Dispose from a finally, and
-                            // an exception thrown out of it would replace whatever the job was already
-                            // failing with.
-                            if (asyncResult.AsyncWaitHandle.WaitOne(1000))
+                            if (!progressForm_Temp.IsDisposed)
                             {
-                                try
-                                {
-                                    progressForm_Temp.EndInvoke(asyncResult);
-                                }
-                                catch (Exception exception)
-                                {
-                                    if (exception_Startup == null)
-                                    {
-                                        exception_Startup = exception;
-                                    }
-                                }
+                                progressForm_Temp.Close();
                             }
-                        }
-                        catch (InvalidOperationException)
-                        {
-                            // no handle any more; the close below deals with whatever is left
-                        }
-
-                        // Closing the form ends Application.Run, which ends the thread.
-                        progressForm_Temp.BeginInvoke(new Action(progressForm_Temp.Close));
+                        }));
                     }
                 }
                 catch (System.ComponentModel.InvalidAsynchronousStateException)
@@ -430,6 +417,13 @@ namespace SAM.Core.Windows.Forms
                 catch (ObjectDisposedException)
                 {
                     // same
+                }
+                catch (InvalidOperationException)
+                {
+                    // The handle went away between the check above and the post - the user closing the dialog
+                    // by hand is enough to do it. Listed separately even though ObjectDisposedException
+                    // derives from it, because BeginInvoke throws the plain base type when no suitable handle
+                    // remains, and catching only the derived one lets that escape.
                 }
             }
 
