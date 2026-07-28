@@ -57,12 +57,133 @@ namespace SAM.Core.Windows.Forms
         /// </summary>
         private readonly ManualResetEventSlim manualResetEventSlim = new ManualResetEventSlim(false);
 
+        private volatile bool shutdownCompleted;
+
+        /// <summary>
+        /// True once <see cref="Dispose"/> has both joined the dialog thread and established that no
+        /// <see cref="CancelRequested"/> handler will run again. Only then is the caller's post-dispose
+        /// cancellation check final: while either is outstanding the dialog thread is still live and a click
+        /// it has queued can still be sitting unobserved, so a run that looks successful may not be one.
+        /// <para>
+        /// False before <see cref="Dispose"/> has run. Callers should read it after disposing and treat false
+        /// as "the outcome of this run cannot be confirmed" rather than as success. No caller reads it yet —
+        /// what the existing WinForms call sites should report on an unconfirmed shutdown is still open.
+        /// </para>
+        /// </summary>
+        public bool ShutdownCompleted
+        {
+            get
+            {
+                return shutdownCompleted;
+            }
+        }
+
+        /// <summary>
+        /// Guards <see cref="cancelRequested"/> and <see cref="cancelRequested_Latched"/> together, so a
+        /// subscription and a cancel arriving at the same moment cannot interleave into "latched, but the
+        /// handler that was being added never heard about it".
+        /// </summary>
+        private readonly object cancelRequested_Lock = new object();
+
+        /// <summary>
+        /// True once the user has asked to cancel, whether or not anyone was listening at the time.
+        /// </summary>
+        private bool cancelRequested_Latched;
+
+        // System-qualified: SAM.Core.Windows has its own EventHandler namespace that otherwise wins here.
+        private System.EventHandler cancelRequested;
+
+        /// <summary>
+        /// Set at the very end of <see cref="Dispose"/>, after which no handler is ever invoked again. This
+        /// matters when the dialog thread could NOT be joined: the caller is about to make its final token
+        /// observation and then dispose the <c>CancellationTokenSource</c> its handler closes over, and
+        /// <c>Cancel()</c> on a disposed source throws — on the dialog thread, killing it. Detaching means a
+        /// click still in flight on a thread we failed to join is dropped rather than turned into an exception
+        /// against state the caller has already torn down.
+        /// </summary>
+        private bool cancelRequested_Detached;
+
         /// <summary>
         /// Raised on the dialog's thread when the user clicks Cancel, so a handler must be safe to call from a
         /// thread other than the one running the job. Cancelling a <c>CancellationTokenSource</c> is.
+        /// <para>
+        /// Latching rather than a plain field-like event, because the window is clickable before the caller
+        /// can subscribe: the constructor returns as soon as the dialog is up, and only then does the caller
+        /// get to attach its handler. A click landing in that gap would invoke a null handler list and be
+        /// thrown away — the dialog would record the cancellation and nothing would act on it. Subscribing
+        /// after the fact therefore fires immediately if a cancel has already been recorded.
+        /// </para>
+        /// <para>
+        /// Handlers must be safe to run on the subscribing thread as well as the dialog's, since that
+        /// catch-up call happens inline on whichever thread subscribes.
+        /// </para>
         /// </summary>
-        // System-qualified: SAM.Core.Windows has its own EventHandler namespace that otherwise wins here.
-        public event System.EventHandler CancelRequested;
+        public event System.EventHandler CancelRequested
+        {
+            add
+            {
+                // The catch-up invoke happens under the lock, like every other invoke on this class - see
+                // RaiseCancelRequested for why that is what makes Dispose's quiescence guarantee real.
+                lock (cancelRequested_Lock)
+                {
+                    if (cancelRequested_Detached)
+                    {
+                        return;
+                    }
+
+                    cancelRequested += value;
+
+                    if (cancelRequested_Latched)
+                    {
+                        value?.Invoke(this, EventArgs.Empty);
+                    }
+                }
+            }
+
+            remove
+            {
+                lock (cancelRequested_Lock)
+                {
+                    cancelRequested -= value;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Records the cancellation and notifies whoever is listening, at most once. Called only from the
+        /// dialog thread. <see cref="Dispose"/>'s safety net deliberately does NOT route through here: it
+        /// raises inline, under the single bounded acquisition it already makes, because a second unbounded
+        /// acquisition from the caller thread cannot be made safe — see there.
+        /// </summary>
+        private void RaiseCancelRequested()
+        {
+            // Handlers are invoked INSIDE the lock, deliberately, and this is the whole teardown handshake:
+            // Dispose acquires the same lock to detach, so it cannot return while a handler is still running,
+            // and no handler can start once it has. Capturing the delegate under the lock and invoking outside
+            // it - the obvious shape - does NOT achieve that: clearing the field cannot revoke a delegate a
+            // stalled thread has already copied into a local, so Dispose could return, the caller could
+            // dispose the CancellationTokenSource its handler closes over, and the handler could then run
+            // against it.
+            //
+            // Safe to hold across caller code because nothing Dispose does while waiting on this lock depends
+            // on this thread: the input drain and the Join both complete before it is attempted, and the
+            // single acquisition it then makes is a bounded TryEnter - so a handler that never returns costs
+            // Dispose two seconds and a reported failure to quiesce, not a deadlock.
+            lock (cancelRequested_Lock)
+            {
+                if (cancelRequested_Latched || cancelRequested_Detached)
+                {
+                    return;
+                }
+
+                cancelRequested_Latched = true;
+
+                // No catch around this. Swallowing here would span the whole multicast: it would silently eat
+                // a genuine failure from any subscriber, skip every subscriber after the one that threw, and
+                // hide it from both the dialog thread's outer catch and the Exception property.
+                cancelRequested?.Invoke(this, EventArgs.Empty);
+            }
+        }
 
         /// <param name="name">Window title.</param>
         /// <param name="max">Number of steps the progress bar counts to.</param>
@@ -92,7 +213,7 @@ namespace SAM.Core.Windows.Forms
                     };
 
                     progressForm_Temp.Note = note;
-                    progressForm_Temp.CancelRequested += (s, e) => CancelRequested?.Invoke(this, EventArgs.Empty);
+                    progressForm_Temp.CancelRequested += (s, e) => RaiseCancelRequested();
 
                     progressForm_Temp.Load += (s, e) =>
                     {
@@ -173,9 +294,14 @@ namespace SAM.Core.Windows.Forms
         }
 
         /// <summary>
-        /// Non-null when the dialog thread died of an exception raised inside its message loop, after the
-        /// constructor had already returned. The dialog is gone; the job it was reporting on is unaffected and
-        /// keeps running, which is why this is reported rather than thrown.
+        /// Non-null when something went wrong with the dialog itself: either its thread died of an exception
+        /// raised inside its message loop after the constructor had already returned, or <see cref="Dispose"/>
+        /// could not join that thread — or quiesce its handlers — within their timeouts. The job the dialog was
+        /// reporting on is unaffected either way, which is why this is reported rather than thrown.
+        /// <para>
+        /// A failed join is worth checking for, not just logging: it is the one case where a Cancel click can
+        /// still be lost, because a thread that will not shut down cannot be asked what the user did.
+        /// </para>
         /// </summary>
         public Exception Exception
         {
@@ -248,8 +374,40 @@ namespace SAM.Core.Windows.Forms
                 {
                     if (progressForm_Temp.IsHandleCreated && !progressForm_Temp.IsDisposed)
                     {
-                        // Closing the form ends Application.Run, which ends the thread.
-                        progressForm_Temp.BeginInvoke(new Action(progressForm_Temp.Close));
+                        // Let input the user has already generated - a Cancel click above all - be dispatched
+                        // before the form is closed. This is the WinForms form of the same failure the
+                        // dispatcher twin fixes with priorities, and the mechanism is different enough to be
+                        // worth stating: GetMessage hands back SENT messages, then POSTED messages, and only
+                        // then INPUT. Control.BeginInvoke posts, so a bare BeginInvoke(Close) is retrieved
+                        // ahead of a WM_LBUTTONUP already sitting in the input queue and tears the window down
+                        // over the top of the click - the run then reports success after the user asked it to
+                        // stop, which is precisely the failure this class exists to prevent, one layer down.
+                        // Application.DoEvents drains input as well as posted work, so pumping before closing
+                        // gets the click processed and latched.
+                        //
+                        // Drain and close are ONE callback, deliberately. Splitting them into two posts is
+                        // what an earlier revision did, and it opened a worse hole than it closed: DoEvents
+                        // dispatches whatever input is queued, so a title-bar-X or Alt+F4 sitting in that
+                        // queue closes AND disposes the form, and the second post then throws
+                        // InvalidOperationException - out of a Dispose that callers run from a finally,
+                        // replacing the job's own exception and skipping the join and the quiescence
+                        // handshake below. Running both on the dialog thread removes the gap entirely, and
+                        // the IsDisposed check is reliable there because nothing else can close the form
+                        // behind our back on the thread that owns it.
+                        //
+                        // No bounded wait on this post: closing the form ends Application.Run, which ends the
+                        // thread, so the Join below already bounds the whole thing. Anything DoEvents throws
+                        // is captured by WinForms in the IAsyncResult and dropped, which is the right trade
+                        // here - a diagnostic lost is better than an exception out of a finally.
+                        progressForm_Temp.BeginInvoke(new Action(() =>
+                        {
+                            Application.DoEvents();
+
+                            if (!progressForm_Temp.IsDisposed)
+                            {
+                                progressForm_Temp.Close();
+                            }
+                        }));
                     }
                 }
                 catch (System.ComponentModel.InvalidAsynchronousStateException)
@@ -260,11 +418,82 @@ namespace SAM.Core.Windows.Forms
                 {
                     // same
                 }
+                catch (InvalidOperationException)
+                {
+                    // The handle went away between the check above and the post - the user closing the dialog
+                    // by hand is enough to do it. Listed separately even though ObjectDisposedException
+                    // derives from it, because BeginInvoke throws the plain base type when no suitable handle
+                    // remains, and catching only the derived one lets that escape.
+                }
             }
 
             // Bounded for the same reason as the startup wait: a stuck dialog thread must not hang the host.
-            // ProgressForm's FormClosing sleeps for a second, so this is never instant.
-            thread?.Join(5000);
+            bool joined = thread == null || thread.Join(5000);
+
+            // The teardown handshake AND the safety-net raise, under one bounded acquisition.
+            //
+            // Taking this lock waits out any handler currently running on the dialog thread, and setting the
+            // detached flag under it stops another starting - so once this block completes, no handler will
+            // ever run again and the caller can dispose the CancellationTokenSource its handler closes over
+            // without the dialog thread throwing ObjectDisposedException against it.
+            //
+            // TryEnter rather than lock: a handler that never returns must not hang the host. Failing to take
+            // it is the one case where quiescence cannot be established, and it is reported rather than
+            // pretended away.
+            //
+            // The safety net has to live INSIDE this same acquisition rather than before it. A handler still
+            // running on a dialog thread the join failed to reach is holding this lock, and a separate
+            // RaiseCancelRequested call from here would wait on it unbounded - never reaching the TryEnter
+            // that exists precisely to bound that wait, and deadlocking Dispose instead of timing out.
+            bool quiesced = Monitor.TryEnter(cancelRequested_Lock, 2000);
+            if (quiesced)
+            {
+                try
+                {
+                    // Last line of defence, and the reason the caller's "dispose, then observe the token"
+                    // ordering is airtight rather than just narrower. Once the thread is joined the dialog is
+                    // finished with: whatever the user did has either been forwarded already or is recorded in
+                    // the form's own volatile flag, which outlives it. Raising here converts that flag into the
+                    // cancel the caller is about to look for. The latch check keeps a click that was forwarded
+                    // normally from firing twice.
+                    if (progressForm_Temp != null && progressForm_Temp.CancellationRequested && !cancelRequested_Latched)
+                    {
+                        cancelRequested_Latched = true;
+
+                        // Caught here, unlike the raise on the dialog thread, for a reason specific to this
+                        // call site: callers invoke Dispose from a finally, so an exception thrown out of it
+                        // would replace whatever the job was already failing with. Recorded and surfaced
+                        // through Exception instead - visible, but not masking the primary fault.
+                        try
+                        {
+                            cancelRequested?.Invoke(this, EventArgs.Empty);
+                        }
+                        catch (Exception exception)
+                        {
+                            if (exception_Startup == null)
+                            {
+                                exception_Startup = exception;
+                            }
+                        }
+                    }
+
+                    cancelRequested = null;
+                    cancelRequested_Detached = true;
+                }
+                finally
+                {
+                    Monitor.Exit(cancelRequested_Lock);
+                }
+            }
+
+            shutdownCompleted = joined && quiesced;
+
+            if (!shutdownCompleted && exception_Startup == null)
+            {
+                exception_Startup = joined
+                    ? new TimeoutException("A ProgressFormHost.CancelRequested handler did not return within 2 seconds, so the dialog could not be quiesced.")
+                    : new TimeoutException("The progress dialog thread did not shut down within 5 seconds; a cancellation made in that window may have been lost.");
+            }
 
             progressForm = null;
 
