@@ -275,7 +275,7 @@ namespace SAM.Core.Windows.Forms
 
         private void MaterialLibraryForm_HelpButtonClicked(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            System.Diagnostics.Process.Start(@"https://github.com/HoareLea/SAM/wiki/Construction#materials");
+            System.Diagnostics.Process.Start(@"https://github.com/SAM-BIM/SAM/wiki/Construction#materials");
         }
 
         private void Button_Export_Click(object sender, EventArgs e)

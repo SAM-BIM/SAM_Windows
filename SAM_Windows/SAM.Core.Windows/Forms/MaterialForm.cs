@@ -55,22 +55,22 @@ namespace SAM.Core.Windows.Forms
 
         private void MaterialForm_HelpButtonClicked(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            string link = "https://github.com/HoareLea/SAM/wiki/Construction#materials";
+            string link = "https://github.com/SAM-BIM/SAM/wiki/Construction#materials";
 
             IMaterial material = Material;
             if (material != null)
             {
                 if(material is GasMaterial)
                 {
-                    link = "https://github.com/HoareLea/SAM/wiki/Construction#gas-material";
+                    link = "https://github.com/SAM-BIM/SAM/wiki/Construction#gas-material";
                 }
                 else if (material is TransparentMaterial)
                 {
-                    link = "https://github.com/HoareLea/SAM/wiki/Construction#transparent-material";
+                    link = "https://github.com/SAM-BIM/SAM/wiki/Construction#transparent-material";
                 }
                 else if (material is OpaqueMaterial)
                 {
-                    link = "https://github.com/HoareLea/SAM/wiki/Construction#opaque-material";
+                    link = "https://github.com/SAM-BIM/SAM/wiki/Construction#opaque-material";
                 }
             }
 
