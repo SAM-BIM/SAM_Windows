@@ -50,6 +50,16 @@ Not yet set by the owner. Record them here at the first Q4 planning pass. Known 
 - Checked, no action: the `github.repository_owner == 'SAM-BIM'` build guard (intentional; its comment names HoareLea only to explain why the guard exists), CODEOWNERS (SAM-BIM owners), and workflow secrets (no HoareLea-named secret). The local `upstream` (HoareLea) remote is preserved.
 - Full cross-repository record, migration table and owner decisions: `SAM_Deploy:sow/2026-Q4` `PROJECT_PROGRESS.md`.
 
+## Q4 runtime-URL cleanup (2026-10-06)
+
+- **Status:** complete. SAM-BIM/SAM_Windows#13 merged into `sow/2026-Q4` as merge commit `3031612d6fda4823f27c62dafb78f85b527c2098` (PR head `658cc73ed288fabc8d1bc250faa8c23773d76da5`, Q4 base `328808a`); merge method: merge commit (repository convention). Remote and local `fix/sam-bim-runtime-urls-q4` removed.
+- **Work completed:** The material forms' help links now open `https://github.com/SAM-BIM/SAM/wiki/Construction#...` (anchors `materials`, `gas-material`, `transparent-material`, `opaque-material`) instead of the `HoareLea/SAM` wiki; the SAM-BIM wiki holds the identical page. SAM-BIM is the authoritative ecosystem; HoareLea is no longer the synchronised operational source. Record: the PR's `SAM-BIM-RuntimeUrls-Q4.md` document.
+- **Decisions / owner classifications:** Assembly author/contact strings (`Hoare Lea`, `@hoarelea.com` in `Kernel/AssemblyInfo.cs`) are provenance/metadata, not repository ownership: KEEP unchanged.
+- **Files changed:** `MaterialForm.cs`, `SelectMaterialForm.cs`, `MaterialLibraryForm.cs` (9 URL lines, plus the SPDX header the `spdx` check requires in each changed `.cs` file), `docs/SAM-BIM-RuntimeUrls-Q4.md`.
+- **Validation:** `msbuild SAM_Windows.sln -p:Configuration=Release` (APPDATA/USERPROFILE redirected): 0 errors; `SAM.Core.Windows.dll` contains the new links and no HoareLea string. No test project. PR CI build and spdx green.
+- **Unresolved issues, risks:** None introduced.
+- **Next step:** None for this change.
+
 ---
 
 # Historical record - 2026-Q3 (frozen)
