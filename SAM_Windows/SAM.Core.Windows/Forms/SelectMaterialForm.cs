@@ -1,4 +1,7 @@
-﻿using System;
+﻿// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (c) 2020–2026 Michal Dengusiak & Jakub Ziolkowski and contributors
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Forms;
@@ -77,22 +80,22 @@ namespace SAM.Core.Windows.Forms
 
         private void SelectMaterialForm_HelpButtonClicked(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            string link = "https://github.com/HoareLea/SAM/wiki/Construction#materials";
+            string link = "https://github.com/SAM-BIM/SAM/wiki/Construction#materials";
 
             IMaterial material = Material;
             if (material != null)
             {
                 if(material is GasMaterial)
                 {
-                    link = "https://github.com/HoareLea/SAM/wiki/Construction#gas-material";
+                    link = "https://github.com/SAM-BIM/SAM/wiki/Construction#gas-material";
                 }
                 else if (material is TransparentMaterial)
                 {
-                    link = "https://github.com/HoareLea/SAM/wiki/Construction#transparent-material";
+                    link = "https://github.com/SAM-BIM/SAM/wiki/Construction#transparent-material";
                 }
                 else if (material is OpaqueMaterial)
                 {
-                    link = "https://github.com/HoareLea/SAM/wiki/Construction#opaque-material";
+                    link = "https://github.com/SAM-BIM/SAM/wiki/Construction#opaque-material";
                 }
             }
 

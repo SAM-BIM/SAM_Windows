@@ -1,4 +1,7 @@
-﻿using System;
+﻿// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (c) 2020–2026 Michal Dengusiak & Jakub Ziolkowski and contributors
+
+using System;
 using System.Collections.Generic;
 using System.Windows.Forms;
 
@@ -275,7 +278,7 @@ namespace SAM.Core.Windows.Forms
 
         private void MaterialLibraryForm_HelpButtonClicked(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            System.Diagnostics.Process.Start(@"https://github.com/HoareLea/SAM/wiki/Construction#materials");
+            System.Diagnostics.Process.Start(@"https://github.com/SAM-BIM/SAM/wiki/Construction#materials");
         }
 
         private void Button_Export_Click(object sender, EventArgs e)
